@@ -202,7 +202,9 @@ AC_CHECK_LIB([crypto], [EVP_sha256],
 	fi],
 	[], [-lcrypto])
 
-AC_CHECK_LIB([crypto], [MD5_Init],
+dnl Probe EVP_md5 rather than the deprecated low-level MD5_Init so the check
+dnl succeeds against OpenSSL 3 without relying on legacy symbols.
+AC_CHECK_LIB([crypto], [EVP_md5],
 	[if test "x$xenable_internal_md5" != "xyes"; then
 	    if test "x$have_crypto" != "xyes"; then
 	        LIBS="$LIBS -lcrypto"
@@ -212,7 +214,9 @@ AC_CHECK_LIB([crypto], [MD5_Init],
 	fi],
 	[], [-lcrypto])
 
-AC_CHECK_LIB([crypto], [MD2_Init],
+dnl MD2 is only available via the legacy provider in OpenSSL 3; this probe
+dnl will fail there and the internal fallback in auth.c takes over.
+AC_CHECK_LIB([crypto], [EVP_md2],
 	[if test "x$xenable_internal_md5" != "xyes"; then
 	    if test "x$have_crypto" != "xyes" && test "x$have_md5" != "xyes"; then
 	        LIBS="$LIBS -lcrypto"
