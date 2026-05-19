@@ -31,6 +31,7 @@
  */
 
 #include <ctype.h>
+#include <errno.h>
 #include <limits.h>
 #include <stddef.h>
 
@@ -1515,7 +1516,13 @@ int oem_info_list_load(oem_valstr_list_t **list)
 		 */
 		in = fopen(IANADIR PATH_SEPARATOR IANA_PEN_REGISTRY, "r");
 		if (!in) {
-			lperror(LOG_ERR, "IANA PEN registry open failed");
+			/* A missing registry file is the expected case when
+			 * built with --disable-registry-download.  Only treat
+			 * a real I/O / permission error as warn-worthy. */
+			if (errno == ENOENT)
+				lprintf(LOG_DEBUG, "IANA PEN registry not installed");
+			else
+				lperror(LOG_ERR, "IANA PEN registry open failed");
 			return -1;
 		}
 	}
@@ -1734,7 +1741,7 @@ void ipmi_oem_info_init()
 	}
 
 	if ((count = oem_info_list_load(&oemlist)) < 1) {
-		lprintf(LOG_WARN, "Failed to load entries from IANA PEN Registry");
+		lprintf(LOG_DEBUG, "Failed to load entries from IANA PEN Registry");
 		count = 0;
 	}
 
