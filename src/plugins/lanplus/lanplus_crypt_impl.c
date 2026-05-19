@@ -34,10 +34,14 @@
 #include "ipmitool/ipmi_constants.h"
 #include "lanplus.h"
 #include "lanplus_crypt_impl.h"
+#include <openssl/opensslv.h>
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/err.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+# include <openssl/params.h>
+#endif
 #include <assert.h>
 
 
@@ -119,18 +123,18 @@ lanplus_HMAC(uint8_t        mac,
 			 uint8_t       *md,
 			 uint32_t        *md_len)
 {
-	const EVP_MD *evp_md = NULL;
+	const char *digest_name = NULL;
 
 	if ((mac == IPMI_AUTH_RAKP_HMAC_SHA1) ||
 		(mac == IPMI_INTEGRITY_HMAC_SHA1_96))
-		evp_md = EVP_sha1();
+		digest_name = "SHA1";
 	else if ((mac == IPMI_AUTH_RAKP_HMAC_MD5) ||
 			 (mac == IPMI_INTEGRITY_HMAC_MD5_128))
-		evp_md = EVP_md5();
+		digest_name = "MD5";
 #ifdef HAVE_CRYPTO_SHA256
 	else if ((mac == IPMI_AUTH_RAKP_HMAC_SHA256) ||
 			 (mac == IPMI_INTEGRITY_HMAC_SHA256_128))
-		evp_md = EVP_sha256();
+		digest_name = "SHA256";
 #endif /* HAVE_CRYPTO_SHA256 */
 	else
 	{
@@ -138,7 +142,41 @@ lanplus_HMAC(uint8_t        mac,
 		assert(0);
 	}
 
-	return HMAC(evp_md, key, key_len, d, n, md, (unsigned int *)md_len);
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	{
+		EVP_MAC *evp_mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
+		EVP_MAC_CTX *ctx = NULL;
+		OSSL_PARAM params[2];
+		size_t out_len = 0;
+
+		if (!evp_mac)
+			return NULL;
+
+		ctx = EVP_MAC_CTX_new(evp_mac);
+		EVP_MAC_free(evp_mac);
+		if (!ctx)
+			return NULL;
+
+		params[0] = OSSL_PARAM_construct_utf8_string("digest",
+				(char *)digest_name, 0);
+		params[1] = OSSL_PARAM_construct_end();
+
+		if (!EVP_MAC_init(ctx, key, key_len, params)
+			|| !EVP_MAC_update(ctx, d, n)
+			|| !EVP_MAC_final(ctx, md, &out_len, EVP_MAX_MD_SIZE)) {
+			EVP_MAC_CTX_free(ctx);
+			return NULL;
+		}
+		EVP_MAC_CTX_free(ctx);
+		*md_len = (uint32_t)out_len;
+		return md;
+	}
+#else
+	{
+		const EVP_MD *evp_md = EVP_get_digestbyname(digest_name);
+		return HMAC(evp_md, key, key_len, d, n, md, (unsigned int *)md_len);
+	}
+#endif
 }
 
 
