@@ -1,0 +1,100 @@
+#!/bin/bash
+#
+# SlackBuild for ipmitool (libssl3 fork)
+#
+# Run inside a Slackware 15.0 x86_64 build environment with the source
+# tree mounted/copied at $CWD/src.  Produces a .txz under $OUTPUT.
+
+set -e
+
+PRGNAM=ipmitool
+VERSION=${VERSION:-1.8.19}
+BUILD=${BUILD:-1}
+TAG=${TAG:-jhm}
+ARCH=${ARCH:-x86_64}
+
+CWD=$(pwd)
+SRC=${SRC:-$CWD/src}
+TMP=${TMP:-/tmp/SBo}
+PKG=$TMP/package-$PRGNAM
+OUTPUT=${OUTPUT:-/tmp}
+
+case "$ARCH" in
+  i?86)    SLKCFLAGS="-O2 -march=i586 -mtune=i686"; LIBDIRSUFFIX="" ;;
+  x86_64)  SLKCFLAGS="-O2 -fPIC"; LIBDIRSUFFIX="64" ;;
+  *)       SLKCFLAGS="-O2"; LIBDIRSUFFIX="" ;;
+esac
+
+rm -rf "$PKG"
+mkdir -p "$TMP" "$PKG" "$OUTPUT"
+
+cd "$SRC"
+
+# Clean any artifacts from a prior (possibly host-OS) build so configure
+# starts fresh.  Ignore failures: distclean only works if a Makefile is
+# already present.
+make distclean >/dev/null 2>&1 || true
+rm -f config.cache config.status config.log
+
+# Regenerate configure if we're working from a fresh git checkout.
+if [ ! -x configure ]; then
+  ./bootstrap
+fi
+
+CFLAGS="$SLKCFLAGS" \
+CXXFLAGS="$SLKCFLAGS" \
+./configure \
+  --prefix=/usr \
+  --libdir=/usr/lib$LIBDIRSUFFIX \
+  --sysconfdir=/etc \
+  --localstatedir=/var \
+  --mandir=/usr/man \
+  --docdir=/usr/doc/$PRGNAM-$VERSION \
+  --enable-intf-lan \
+  --enable-intf-lanplus \
+  --disable-ipmishell \
+  --disable-registry-download \
+  --build=$ARCH-slackware-linux
+
+make
+make install DESTDIR="$PKG"
+
+# Move docs to the Slackware-standard location if configure didn't.
+if [ -d "$PKG/usr/share/doc/$PRGNAM" ] && [ ! -d "$PKG/usr/doc/$PRGNAM-$VERSION" ]; then
+  mkdir -p "$PKG/usr/doc"
+  mv "$PKG/usr/share/doc/$PRGNAM" "$PKG/usr/doc/$PRGNAM-$VERSION"
+  rmdir "$PKG/usr/share/doc" 2>/dev/null || true
+fi
+
+# Compress man pages.
+if [ -d "$PKG/usr/man" ]; then
+  find "$PKG/usr/man" -type f -name '*.[1-9]' -exec gzip -9 {} +
+fi
+
+# Strip binaries.
+find "$PKG" -type f \( -name 'ipmitool' -o -name 'ipmievd' \) \
+  -exec strip --strip-unneeded {} + 2>/dev/null || true
+
+# Install the slack-desc.
+install -d "$PKG/install"
+install -m 0644 "$CWD/slack-desc" "$PKG/install/slack-desc"
+
+# Build the .txz.  We prefer Slackware's /sbin/makepkg when it's present
+# (it handles edge cases like symlink->doinst.sh conversion).  When it
+# isn't (e.g. building inside a Debian container), fall back to a manual
+# tar+xz that produces the same on-the-wire layout: a flat tarball rooted
+# at "/" with ./install/slack-desc inside, owned by root:root.
+PKGFILE="$OUTPUT/$PRGNAM-$VERSION-$ARCH-$BUILD$TAG.txz"
+
+cd "$PKG"
+if [ -x /sbin/makepkg ]; then
+  /sbin/makepkg -l y -c n "$PKGFILE"
+else
+  echo "==> /sbin/makepkg unavailable; building $PKGFILE manually"
+  # Ensure deterministic ownership; installpkg expects root:root.
+  tar --owner=0 --group=0 --numeric-owner \
+      --sort=name \
+      -cf - . \
+    | xz -9e -c > "$PKGFILE"
+  echo "==> $(basename "$PKGFILE") ($(du -h "$PKGFILE" | cut -f1))"
+fi

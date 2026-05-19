@@ -1,0 +1,19 @@
+# HOW TO EDIT THIS FILE:
+# The "handy ruler" below makes it easier to edit a package description.
+# Line up the first '|' above the ':' following the base package name, and
+# the '|' on the right side marks the last column you can put a character in.
+# You must make exactly 11 lines for the formatting to be correct.  It's also
+# customary to leave one space after the ':' except on otherwise blank lines.
+
+        |-----handy-ruler------------------------------------------------------|
+ipmitool: ipmitool (utility for IPMI control)
+ipmitool:
+ipmitool: ipmitool is a utility for managing and configuring devices that
+ipmitool: support the Intelligent Platform Management Interface (IPMI).
+ipmitool: IPMI is an open standard for monitoring, logging, recovery,
+ipmitool: inventory, and control of hardware that is implemented independent
+ipmitool: of the main CPU, BIOS, and OS.
+ipmitool:
+ipmitool: This build links against OpenSSL 3 (libssl3 / libcrypto.so.3).
+ipmitool:
+ipmitool: Upstream: https://github.com/ipmitool/ipmitool
