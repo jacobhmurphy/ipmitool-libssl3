@@ -46,13 +46,11 @@
 # include <config.h>
 #endif
 
-#ifdef HAVE_CRYPTO_MD2
-# include <openssl/md2.h>
+#if defined(HAVE_CRYPTO_MD5) || defined(HAVE_CRYPTO_MD2)
+# include <openssl/evp.h>
 #endif
 
-#ifdef HAVE_CRYPTO_MD5
-# include <openssl/md5.h>
-#else
+#ifndef HAVE_CRYPTO_MD5
 # include "md5.h"
 #endif
 
@@ -65,7 +63,7 @@
 uint8_t * ipmi_auth_md5(struct ipmi_session * s, uint8_t * data, int data_len)
 {
 #ifdef HAVE_CRYPTO_MD5
-	MD5_CTX ctx;
+	EVP_MD_CTX *ctx;
 	static uint8_t md[16];
 	uint32_t temp;
 
@@ -75,15 +73,16 @@ uint8_t * ipmi_auth_md5(struct ipmi_session * s, uint8_t * data, int data_len)
 	temp = s->in_seq;
 #endif
 	memset(md, 0, 16);
-	memset(&ctx, 0, sizeof(MD5_CTX));
 
-	MD5_Init(&ctx);
-	MD5_Update(&ctx, (const uint8_t *)s->authcode, 16);
-	MD5_Update(&ctx, (const uint8_t *)&s->session_id, 4);
-	MD5_Update(&ctx, (const uint8_t *)data, data_len);
-	MD5_Update(&ctx, (const uint8_t *)&temp, sizeof(uint32_t));
-	MD5_Update(&ctx, (const uint8_t *)s->authcode, 16);
-	MD5_Final(md, &ctx);
+	ctx = EVP_MD_CTX_new();
+	EVP_DigestInit_ex(ctx, EVP_md5(), NULL);
+	EVP_DigestUpdate(ctx, (const uint8_t *)s->authcode, 16);
+	EVP_DigestUpdate(ctx, (const uint8_t *)&s->session_id, 4);
+	EVP_DigestUpdate(ctx, (const uint8_t *)data, data_len);
+	EVP_DigestUpdate(ctx, (const uint8_t *)&temp, sizeof(uint32_t));
+	EVP_DigestUpdate(ctx, (const uint8_t *)s->authcode, 16);
+	EVP_DigestFinal_ex(ctx, md, NULL);
+	EVP_MD_CTX_free(ctx);
 
 	if (verbose > 3)
 		printf("  MD5 AuthCode    : %s\n", buf2str(md, 16));
@@ -138,9 +137,16 @@ uint8_t * ipmi_auth_md2(
     int __MD2_ONLY__(data_len))
 {
 #ifdef HAVE_CRYPTO_MD2
-	MD2_CTX ctx;
+	EVP_MD_CTX *ctx;
 	static uint8_t md[16];
 	uint32_t temp;
+	const EVP_MD *md2 = EVP_get_digestbyname("MD2");
+
+	if (!md2) {
+		memset(md, 0, 16);
+		printf("WARNING: MD2 unavailable in libcrypto; load the legacy provider.\n");
+		return md;
+	}
 
 #if WORDS_BIGENDIAN
 	temp = BSWAP_32(s->in_seq);
@@ -148,15 +154,16 @@ uint8_t * ipmi_auth_md2(
 	temp = s->in_seq;
 #endif
 	memset(md, 0, 16);
-	memset(&ctx, 0, sizeof(MD2_CTX));
 
-	MD2_Init(&ctx);
-	MD2_Update(&ctx, (const uint8_t *)s->authcode, 16);
-	MD2_Update(&ctx, (const uint8_t *)&s->session_id, 4);
-	MD2_Update(&ctx, (const uint8_t *)data, data_len);
-	MD2_Update(&ctx, (const uint8_t *)&temp, sizeof(uint32_t));
-	MD2_Update(&ctx, (const uint8_t *)s->authcode, 16);
-	MD2_Final(md, &ctx);
+	ctx = EVP_MD_CTX_new();
+	EVP_DigestInit_ex(ctx, md2, NULL);
+	EVP_DigestUpdate(ctx, (const uint8_t *)s->authcode, 16);
+	EVP_DigestUpdate(ctx, (const uint8_t *)&s->session_id, 4);
+	EVP_DigestUpdate(ctx, (const uint8_t *)data, data_len);
+	EVP_DigestUpdate(ctx, (const uint8_t *)&temp, sizeof(uint32_t));
+	EVP_DigestUpdate(ctx, (const uint8_t *)s->authcode, 16);
+	EVP_DigestFinal_ex(ctx, md, NULL);
+	EVP_MD_CTX_free(ctx);
 
 	if (verbose > 3)
 		printf("  MD2 AuthCode    : %s\n", buf2str(md, 16));
@@ -175,28 +182,28 @@ uint8_t * ipmi_auth_md2(
 uint8_t * ipmi_auth_special(struct ipmi_session * s)
 {
 #ifdef HAVE_CRYPTO_MD5
-	MD5_CTX ctx;
+	EVP_MD_CTX *ctx;
 	static uint8_t md[16];
 	uint8_t challenge[16];
 	int i;
 
 	memset(challenge, 0, 16);
 	memset(md, 0, 16);
-	memset(&ctx, 0, sizeof(MD5_CTX));
 
-	MD5_Init(&ctx);
-	MD5_Update(&ctx, (const uint8_t *)s->authcode, strlen((const char *)s->authcode));
-	MD5_Final(md, &ctx);
+	ctx = EVP_MD_CTX_new();
+	EVP_DigestInit_ex(ctx, EVP_md5(), NULL);
+	EVP_DigestUpdate(ctx, (const uint8_t *)s->authcode, strlen((const char *)s->authcode));
+	EVP_DigestFinal_ex(ctx, md, NULL);
 
 	for (i=0; i<16; i++)
 		challenge[i] = s->challenge[i] ^ md[i];
 
 	memset(md, 0, 16);
-	memset(&ctx, 0, sizeof(MD5_CTX));
 
-	MD5_Init(&ctx);
-	MD5_Update(&ctx, (const uint8_t *)challenge, 16);
-	MD5_Final(md, &ctx);
+	EVP_DigestInit_ex(ctx, EVP_md5(), NULL);
+	EVP_DigestUpdate(ctx, (const uint8_t *)challenge, 16);
+	EVP_DigestFinal_ex(ctx, md, NULL);
+	EVP_MD_CTX_free(ctx);
 
 	return md;
 #else  /*HAVE_CRYPTO_MD5*/
